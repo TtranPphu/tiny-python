@@ -25,8 +25,8 @@ class file_system_status:
         return os.path.isdir(path)
 
     @staticmethod
-    def join(*components: path_str | str) -> path_str:
-        return file_system_status.std("/".join(components))
+    def join(*components: path_str | str, extention: str = "") -> path_str:
+        return file_system_status.std(f"{'/'.join(components)}.{extention}")
 
     @staticmethod
     def split(path: path_str) -> list[str]:
