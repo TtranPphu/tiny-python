@@ -13,6 +13,10 @@ class file_system_status:
         return file_system_status.std(os.path.abspath(path))
 
     @staticmethod
+    def rel(path: path_str) -> path_str:
+        return file_system_status.std(os.path.relpath(path))
+
+    @staticmethod
     def exists(path: path_str) -> bool:
         return os.path.exists(path)
 
@@ -26,7 +30,9 @@ class file_system_status:
 
     @staticmethod
     def join(*components: path_str | str, extention: str = "") -> path_str:
-        return file_system_status.std(f"{'/'.join(components)}.{extention}")
+        if extention and not extention.startswith("."):
+            extention = f".{extention}"
+        return file_system_status.std(f"{'/'.join(components)}{extention}")
 
     @staticmethod
     def split(path: path_str) -> list[str]:

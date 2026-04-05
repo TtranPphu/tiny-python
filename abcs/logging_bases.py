@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 from logging import Logger, Handler, getLogger as get_logger
 
 from utils import path_str, fss, fsm
@@ -8,20 +7,31 @@ class HasLogger:
     logger: Logger
 
     def __init__(self, **kwargs):
-
         self.__setup()
 
         super().__init__(**kwargs)
 
     def __setup(self):
+        from logging import DEBUG
+
         fsm.ensure_dir_exists(self._log_folder())
+        self.logger = self.__logger()
+        self.logger.debug("Logger initialized")
+
+    def __logger(self) -> Logger:
+        """Override this method to use custom logger."""
+        from logging import DEBUG
 
         logger = get_logger(self._logger_name())
+        if logger.hasHandlers():
+            return logger
+
+        logger.setLevel(DEBUG)
 
         for handler in self._log_handlers():
             logger.addHandler(handler)
 
-        self.logger = logger
+        return logger
 
     def _logger_name(self) -> str:
         """Override this method to use custom logger name."""
@@ -40,41 +50,41 @@ class HasLogger:
         return [self.__default_steam_handler(), self.__default_file_handler()]
 
     def __default_steam_handler(self) -> Handler:
-        from logging import StreamHandler, Formatter, LogRecord
+        from logging import LogRecord, StreamHandler, Formatter, DEBUG
 
         class DefaultSteamFormatter(Formatter):
-            def format(self, record: LogRecord):
-                return f"{record.asctime} - {record.name} - {record.levelname} - {record.message}"
+            def format(self, record: LogRecord) -> str:
+                from re import sub
+
+                base = super().format(record)
+                trimmed = sub(r" +", " ", base).replace("\n", " ")
+                relative = fss.rel(record.pathname)
+                return trimmed.replace(record.pathname, relative, 1)
 
         steam_handler = StreamHandler()
-        steam_handler.setFormatter(
-            DefaultSteamFormatter(
-                fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
+        steam_formatter = DefaultSteamFormatter(
+            fmt="%(pathname)s:%(lineno)d | %(funcName)s | [%(levelname)s] | %(message)s"
         )
+        steam_handler.setFormatter(steam_formatter)
+        steam_handler.setLevel(DEBUG)
 
         return steam_handler
 
     def __default_file_handler(self) -> Handler:
-        from logging import Formatter, LogRecord
+        from logging import Formatter, INFO
         from logging.handlers import TimedRotatingFileHandler
 
         class DefaultFileFormatter(Formatter):
-            def format(self, record: LogRecord):
-                return f"{record.asctime} - {record.name} - {record.levelname} - {record.message}"
+            pass
 
-        file_handler = TimedRotatingFileHandler(
-            self._log_file(),
-            when="midnight",
-            backupCount=7,
-            encoding="utf-8",
+        file_handler = TimedRotatingFileHandler(self._log_file(), when="midnight")
+        file_formatter = DefaultFileFormatter(
+            fmt="%(asctime)s | %(pathname)s:%(lineno)d | "
+            "%(funcName)s | [%(levelname)s] | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S %z",
         )
-
-        file_handler.setFormatter(
-            DefaultFileFormatter(
-                fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-        )
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(INFO)
 
         return file_handler
 
