@@ -61,12 +61,13 @@ class cavemen_debuger:
         def decorator(func: Callable):
             @wraps(func)
             def inner(*args, **kwargs):
-                trim = cavemen_debuger.trim
-                shink = cavemen_debuger.shrink
+                __trim = cavemen_debuger.trim
+                __shink = cavemen_debuger.shrink
+
                 func_signature = f"{func.__name__}({dumper(*wrapper(args, kwargs))})"
-                print(trim(shink(f"Calling {func_signature}")))
+                print(__trim(__shink(f"Calling {func_signature}")))
                 result = func(*args, **kwargs)
-                print(trim(shink(done_message))) if done_message else None
+                print(__trim(__shink(done_message))) if done_message else None
                 return result
 
             return inner

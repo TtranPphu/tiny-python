@@ -1,6 +1,10 @@
-from logging import Logger, Handler, Formatter, getLogger as get_logger
+from ..utils import (
+    file_system_manipulation as fsm,
+    file_system_status as fss,
+    path_str,
+)
 
-from ..utils import path_str, file_system_status as fss, file_system_manipulation as fsm
+from logging import Logger, Handler, Formatter, getLogger as get_logger
 
 
 class DefaultLogger(Logger):
@@ -33,9 +37,9 @@ class HasLogger:
     def __setup(self):
         fsm.ensure_dir_exists(self._log_folder())
         self.logger = self.__logger()
-        self.logger.debug(
-            f"{self.logger.__class__.__name__}({self._logger_name()}) initialized"
-        )
+        __logger_class = self.logger.__class__.__name__
+        __logger_name = self._logger_name()
+        self.logger.debug(f"{__logger_class}({__logger_name}) initialized")
 
     def __logger(self) -> Logger:
         from logging import DEBUG
@@ -115,24 +119,34 @@ class HasLogger:
 
 
 class WillLogAttrChanges(HasLogger):
-    _S = {}
-    _M = {}
+    from pandas import DataFrame
 
-    def wrap(self, manager: "WillLogAttrChanges", variable: str, value):
+    _S: dict[type, type]
+    _M: dict[type, type]
+    _F: dict[type, type]
+
+    @classmethod
+    def wrap(cls, manager: "WillLogAttrChanges", variable: str, value):
         def __log(t):
             if hasattr(manager, "logger"):
-                manager.logger.debug(f"Wrapping {variable} as {t}")
+                # manager.logger.debug(f"Wrapping {variable} as {t}")
+                pass
 
-        if (__t := type(value)) in self._M:
+        if (__t := type(value)) in cls._M:
             for k, v in value.items():
-                value[k] = self.wrap(manager, f"{variable}[{k}]", v)
-            __log(self._M[__t].__name__)
-            return self._M[__t](manager, variable, **value)
-        elif (__t := type(value)) in self._S:
+                value[k] = cls.wrap(manager, f"{variable}[{k}]", v)
+            __log(cls._M[__t].__name__)
+            return cls._M[__t](manager, variable, **value)
+        elif (__t := type(value)) in cls._F:
+            for c, v in value.items():
+                value[c] = cls.wrap(manager, f"{variable}[{c}]", v)
+            __log(cls._F[__t].__name__)
+            return cls._F[__t](manager, variable, value)
+        elif (__t := type(value)) in cls._S:
             for i, v in enumerate(value):
-                value[i] = self.wrap(manager, f"{variable}[{i}]", v)
-            __log(self._S[__t].__name__)
-            return self._S[__t](manager, variable, *value)
+                value[i] = cls.wrap(manager, f"{variable}[{i}]", v)
+            __log(cls._S[__t].__name__)
+            return cls._S[__t](manager, variable, *value)
         return value
 
     class ObservableList(list):
@@ -177,9 +191,64 @@ class WillLogAttrChanges(HasLogger):
                 self.__manager.logger.debug(f"{self.__variable}[{key}] = {value}")
             super().__setitem__(key, value)
 
+    class ObservableDataFrame(DataFrame):
+        class ObservableLocIndexer:
+            pass
+
+        class ObservableILocIndexer:
+            pass
+
+        def __init__(
+            self, manager: "WillLogAttrChanges", variable: str, *args, **kwargs
+        ):
+            super().__init__(*args, **kwargs)
+            self.__manager = manager
+            self.__variable = variable
+
+        def isetitem(self, loc, value):
+            value = self.__manager.wrap(
+                manager=self.__manager,
+                variable=f"{self.__variable}[{loc}]",
+                value=value,
+            )
+            if hasattr(self.__manager, "logger"):
+                self.__manager.logger.debug(f"{self.__variable}[{loc}] = {value}")
+            return super().isetitem(loc, value)
+
+        def __setitem__(self, key, value):
+            value = self.__manager.wrap(
+                manager=self.__manager,
+                variable=f"{self.__variable}[{key}]",
+                value=value,
+            )
+            if hasattr(self.__manager, "logger"):
+                self.__manager.logger.debug(f"{self.__variable}[{key}] = {value}")
+            super().__setitem__(key, value)
+
+        def rename(self, *args, **kwargs):
+            if self.__manager.logger:
+                message = "{v}.rename({p})"
+                __v = self.__variable
+                __a = list(args) + [f"{k}={v}" for k, v in kwargs.items()]
+                __p = f"{', '.join(__a)}"
+                self.__manager.logger.debug(message.format(v=__v, p=__p))
+            return super().rename(*args, **kwargs)
+
+        def drop(self, *args, **kwargs):
+            if self.__manager.logger:
+                __v = self.__variable
+                __a = list(args) + [f"{k}={v}" for k, v in kwargs.items()]
+                __p = f"{', '.join(__a)}"
+                message = "{v}.drop({p})"
+                self.__manager.logger.debug(message.format(v=__v, p=__p))
+            return super().drop(*args, **kwargs)
+
+    _S = {list: ObservableList}
+    _M = {dict: ObservableDict}
+    _F = {DataFrame: ObservableDataFrame}
+
     def __init__(self, **kwargs):
-        self._S.update({list: self.ObservableList})
-        self._M.update({dict: self.ObservableDict})
+
         for key, value in kwargs.items():
             if key.startswith("_"):
                 continue
@@ -188,7 +257,6 @@ class WillLogAttrChanges(HasLogger):
                 variable=key,
                 value=value,
             )
-
         super().__init__(**kwargs)
 
     def __setattr__(self, name, value):
